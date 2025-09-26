@@ -302,6 +302,7 @@ CI_SERIAL_LIST = [
     "test_spectral_ops",  # Cause CUDA illegal memory access https://github.com/pytorch/pytorch/issues/88916
     "nn/test_pooling",
     "nn/test_convolution",  # Doesn't respect set_per_process_memory_fraction, results in OOM for other tests in slow gradcheck
+    "nn/test_bitlinear",
     "distributions/test_distributions",
     "test_fx",  # gets SIGKILL
     "functorch/test_memory_efficient_fusion",  # Cause CUDA OOM on ROCm

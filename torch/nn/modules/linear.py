@@ -16,6 +16,7 @@ __all__ = [
     "Identity",
     "LazyLinear",
     "Linear",
+    "BitLinear",
 ]
 
 
@@ -326,6 +327,61 @@ class LazyLinear(LazyModuleMixin, Linear):
                 f"{self.weight.shape[-1]}"
             )
             self.in_features = input.shape[-1]
+
+
+class BitLinear(Module):
+    def __init__(
+        self,
+        in_features: int,
+        out_features: int,
+        bits: int = 8,
+        device=None,
+        dtype=None,
+    ) -> None:
+        factory_kwargs = {"device": device, "dtype": dtype}
+        super().__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.bits = bits
+
+        self.weight = Parameter(
+            torch.empty((out_features, in_features), **factory_kwargs)
+        )
+
+        init.kaiming_uniform_(self.weight, a=math.sqrt(5))
+
+        self.Q_b = 2 ** (bits - 1)
+        self.epsilon = 1e-8
+
+    def quant(self, x: Tensor) -> tuple:
+        gamma = torch.max(torch.abs(x))
+
+        # Scale to range [-Qb, Qb]
+        scale = self.Q_b / (gamma + self.epsilon)
+        x_scaled = x * scale
+
+        # Clip to avoid overflow
+        x_quant = torch.clamp(
+            x_scaled, -self.Q_b + self.epsilon, self.Q_b - self.epsilon
+        )
+
+        return x_quant, gamma
+
+    def binarize_weights(self, w: Tensor) -> tuple:
+        alpha = torch.mean(w)
+        beta = torch.mean(torch.abs(w))
+        w_binary = torch.sign(w - alpha)
+        return w_binary, beta
+
+    def forward(self, input: Tensor) -> Tensor:
+        norm_input = F.layer_norm(input, input.shape, bias=None)
+        # norm_input = self.layer_norm(input)
+        x_quant, gamma = self.quant(norm_input)
+        w_binary, beta = self.binarize_weights(self.weight)
+        y = F.linear(x_quant, w_binary, bias=None)
+        scale_factor = (beta * gamma) / self.Q_b
+        y_dequant = y * scale_factor
+        return y_dequant
 
 
 # TODO: PartialLinear - maybe in sparse?
