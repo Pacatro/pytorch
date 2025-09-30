@@ -42,7 +42,7 @@ class TestBitLinearNN(NNTestCase):
 
         x_quant, _ = bit_linear.quant(norm_x)
 
-        # Verificar que está en el rango correcto
+        # Verify that the quantized values are in the range [-Q_b, Q_b]
         assert x_quant.min() >= -bit_linear.Q_b, (
             f"Max value {x_quant.min()} < -Q_b={-bit_linear.Q_b}"
         )

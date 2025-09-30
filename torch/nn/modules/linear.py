@@ -330,6 +330,45 @@ class LazyLinear(LazyModuleMixin, Linear):
 
 
 class BitLinear(Module):
+    r"""Applies a quantized linear transformation with binary weights to the incoming data.
+
+    This implementation is based on the paper `BitNet: Scaling 1-bit Transformers for Large Language Models` (https://arxiv.org/abs/2310.11453)
+
+    Args:
+        in_features: size of each input sample
+        out_features: size of each output sample
+        bits: number of bits for input quantization. Default: ``8``
+        device: the desired device of the parameters. Default: ``None``
+        dtype: the desired data type of the parameters. Default: ``None``
+
+    Shape:
+        - Input: :math:`(*, H_\text{in})` where :math:`*` means any number of
+          dimensions including none and :math:`H_\text{in} = \text{in\_features}`.
+        - Output: :math:`(*, H_\text{out})` where all but the last dimension
+          are the same shape as the input and :math:`H_\text{out} = \text{out\_features}`.
+
+    Attributes:
+        weight: the learnable weights of the module of shape
+            :math:`(\text{out\_features}, \text{in\_features})`. The values are
+            initialized from :math:`\mathcal{U}(-\sqrt{k}, \sqrt{k})`, where
+            :math:`k = \frac{1}{\text{in\_features}}`. During forward pass, weights
+            are binarized to {-1, +1}.
+        Q_b: quantization bound computed as :math:`2^{\text{bits}-1}`
+        epsilon: small constant for numerical stability. Default: ``1e-8``
+
+    Examples::
+
+        >>> m = nn.BitLinear(20, 30, bits=8)
+        >>> input = torch.randn(128, 20)
+        >>> output = m(input)
+        >>> print(output.size())
+        torch.Size([128, 30])
+
+    Note:
+        This layer does not use bias terms. The computation involves layer normalization
+        of inputs, quantization, weight binarization, and dequantization of outputs.
+    """
+
     def __init__(
         self,
         in_features: int,
@@ -375,7 +414,6 @@ class BitLinear(Module):
 
     def forward(self, input: Tensor) -> Tensor:
         norm_input = F.layer_norm(input, input.shape, bias=None)
-        # norm_input = self.layer_norm(input)
         x_quant, gamma = self.quant(norm_input)
         w_binary, beta = self.binarize_weights(self.weight)
         y = F.linear(x_quant, w_binary, bias=None)
