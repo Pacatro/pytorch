@@ -18,6 +18,8 @@ if TEST_WITH_ROCM:
 
 class TestBitLinearNN(NNTestCase):
     def test_binarize_weights(self):
+        """Test that the weights are binarized correctly"""
+
         bit_linear = BitLinear(10, 10)
 
         w_binary, _ = bit_linear.binarize_weights(bit_linear.weight)
@@ -33,6 +35,7 @@ class TestBitLinearNN(NNTestCase):
         )
 
     def test_activation_quantization(self):
+        """Test that the activations are quantized correctly"""
         bit_linear = BitLinear(128, 256, bits=8)
 
         batch_size, seq_len, features = 4, 32, 128
