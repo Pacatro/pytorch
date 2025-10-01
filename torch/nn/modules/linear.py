@@ -332,7 +332,7 @@ class LazyLinear(LazyModuleMixin, Linear):
 class BitLinear(Module):
     r"""Applies a quantized linear transformation with binary weights to the incoming data.
 
-    This implementation is based on the paper `BitNet: Scaling 1-bit Transformers for Large Language Models` (https://arxiv.org/abs/2310.11453)
+    Paper: https://arxiv.org/abs/2310.11453
 
     Args:
         in_features: size of each input sample
@@ -382,44 +382,53 @@ class BitLinear(Module):
         self.in_features = in_features
         self.out_features = out_features
         self.bits = bits
-
         self.weight = Parameter(
             torch.empty((out_features, in_features), **factory_kwargs)
         )
-
         init.kaiming_uniform_(self.weight, a=math.sqrt(5))
-
         self.Q_b = 2 ** (bits - 1)
-        self.epsilon = 1e-8
+        self.epsilon = 1e-5
 
-    def quant(self, x: Tensor) -> tuple:
+    def activation_quantization(self, x: Tensor) -> tuple[Tensor, Tensor]:
         gamma = torch.max(torch.abs(x))
-
-        # Scale to range [-Qb, Qb]
-        scale = self.Q_b / (gamma + self.epsilon)
-        x_scaled = x * scale
-
-        # Clip to avoid overflow
+        x_scaled = x * (self.Q_b / (gamma + self.epsilon))
         x_quant = torch.clamp(
-            x_scaled, -self.Q_b + self.epsilon, self.Q_b - self.epsilon
+            x_scaled,
+            -self.Q_b + self.epsilon,
+            self.Q_b - self.epsilon,
         )
 
         return x_quant, gamma
 
-    def binarize_weights(self, w: Tensor) -> tuple:
+    def binarize_weights(self, w: Tensor) -> tuple[Tensor, Tensor]:
         alpha = torch.mean(w)
-        beta = torch.mean(torch.abs(w))
         w_binary = torch.sign(w - alpha)
+        beta = torch.mean(torch.abs(w))
+
         return w_binary, beta
 
     def forward(self, input: Tensor) -> Tensor:
-        norm_input = F.layer_norm(input, input.shape, bias=None)
-        x_quant, gamma = self.quant(norm_input)
+        norm_input = F.layer_norm(
+            input,
+            normalized_shape=(self.in_features,),
+            weight=None,
+            bias=None,
+            eps=self.epsilon,
+        )
+        x_quant, gamma = self.activation_quantization(norm_input)
         w_binary, beta = self.binarize_weights(self.weight)
         y = F.linear(x_quant, w_binary, bias=None)
-        scale_factor = (beta * gamma) / self.Q_b
-        y_dequant = y * scale_factor
+        scale = (beta * gamma) / self.Q_b
+        y_dequant = y * scale
+
         return y_dequant
+
+    def extra_repr(self) -> str:
+        return (
+            f"in_features={self.in_features}, "
+            f"out_features={self.out_features}, "
+            f"bits={self.bits}, "
+        )
 
 
 # TODO: PartialLinear - maybe in sparse?
